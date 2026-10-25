@@ -1,0 +1,84 @@
+name: CI
+
+# The build/test GATE (AGENTS.md "Gate") — hermetic, zero-spend, offline. Lint +
+# typecheck + coverage-gated unit tests + build + the no-leaks scan
+# over BOTH src/ and the emitted dist/.
+#
+# Validation only — this workflow never publishes. Publishing is tag-triggered and
+# lives in publish.yml, which re-runs this exact gate before it ships anything:
+# never publish an artifact CI hasn't verified.
+#
+# The required branch-protection check is the `check` job below. Its job id is
+# deliberately the whole of its identity — there is NO `name:` field on the job,
+# because adding one changes the check-run context string and would deadlock every
+# PR against a required check that no longer has a producer.
+#
+# Later work EXTENDS this gate by adding steps to `pnpm check`, not by adding
+# workflows.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # vitest honors CI=true (junit reporter, no watch) — see vitest.config.ts.
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      # pnpm version is the single source of truth in package.json#packageManager
+      # (pnpm@11.5.2). Do NOT add a `version:` here — action-setup v6 errors with
+      # ERR_PNPM_BAD_PM_VERSION if both are specified.
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --trust-lockfile
+
+      # The `check` script is the SINGLE comprehensive gate, so `pnpm check`
+      # locally == this CI merge gate byte-for-byte. In order: lint (eslint flat
+      # config + prettier --check) → typecheck (tsc --noEmit) → tests with coverage
+      # thresholds → build (tsc -p tsconfig.build.json) → no-leaks LAST,
+      # so the emitted dist/ exists to be scanned alongside src/. The scan over
+      # dist/ is the one that makes the publish-safety contract enforced
+      # rather than intended — the scanner hard-errors on a missing root, so a
+      # build that silently produced nothing cannot pass here.
+      - name: Check (lint + typecheck + test:coverage + build + no-leaks)
+        run: pnpm check
+
+      # Surface coverage + junit results even on failure for triage. Both dirs are
+      # gitignored; this is the only way to inspect them.
+      - name: Upload test + coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-coverage-reports
+          path: |
+            coverage/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

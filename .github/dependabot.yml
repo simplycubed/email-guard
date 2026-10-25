@@ -1,0 +1,17 @@
+version: 2
+updates:
+  # Actions are pinned by commit SHA; Dependabot keeps the SHAs (and the version comments) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      dev-dependencies:
+        dependency-type: development

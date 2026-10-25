@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "dist",
+    "rootDir": "src",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    // `tsc` defaults this to false, which would flow JSDoc from src/ into the
+    // published .js, into a consumer's wrangler bundle, and into the consumer's
+    // leak-scan. Belt-and-braces ONLY: the actual invariant is that no provider
+    // or model brand token exists in the source at all, enforced by
+    // scripts/no-leaks.mjs over BOTH src/ and dist/. Do not read this
+    // flag as the protection and relax the invariant.
+    "removeComments": true
+  },
+  // src/ only. Compiling test/ would ship *.test.js in the tarball and hand the
+  // scanner extra surface it has no reason to walk.
+  "include": ["src"],
+  "exclude": ["**/*.test.ts"]
+}

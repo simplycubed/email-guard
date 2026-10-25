@@ -1,0 +1,202 @@
+name: Publish
+
+# The RELEASE path — publishes @simplycubed/email-guard to the public npm registry
+# on a `v*` tag, never on a merge to main.
+#
+# Why tag-triggered: a published version is IMMUTABLE. Unpublishing is disruptive at
+# best and blocked at worst, which puts a publish in the same irreversible class as a
+# prod deploy — and the house rule for that class is a deliberate, human-gated
+# trigger. Publishing on merge would make every merged PR an irreversible external
+# side effect, and would force a version decision into every PR.
+#
+# ── Why two jobs instead of one ───────────────────────────────────────────────────
+# This splits the release flow across two jobs — `verify` (ungated) and `publish`
+# (Environment-gated) — for one reason: GitHub pauses an environment-bound job at
+# its START, before any of its steps run. A single gated job would therefore ask the
+# required reviewer to approve BEFORE the tag assertion and `pnpm check` had
+# produced any evidence — the human would be gating the gate, and a tag that fails
+# the version assertion would still page them. The split puts the human last, on the
+# irreversible step only.
+# ─────────────────────────────────────────────────────────────────────────────────
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  # Never two publishes of the same tag in flight. NOT cancel-in-progress: a publish
+  # is irreversible, so a half-run must be allowed to finish or fail on its own terms
+  # rather than be killed mid-write.
+  group: publish-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── 1. Prove the tag tells the truth, and that the artifact passes its own gate ──
+  # Ungated on purpose: this is the evidence the reviewer in job 2 approves against.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: "true"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          # Full history so the next step can prove the tagged commit is on main.
+          fetch-depth: 0
+          persist-credentials: false
+
+      # A release must come from reviewed code. Anyone with write access can push a `v*` tag
+      # on any commit, so require the tagged commit to be reachable from main.
+      - name: Assert the tagged commit is on main
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+
+      # FIRST, before install or build. A tag that disagrees with package.json can
+      # never publish correctly, so it should cost seconds rather than a full gate
+      # run — and it must fail before anything is uploaded for the publish job.
+      # `github.ref` (refs/tags/vX.Y.Z), NOT `github.ref_name`: the script requires
+      # the refs/tags/ prefix precisely so a mis-wired trigger fails loudly here.
+      # Verified by test/assert-tag-version.test.ts, which watches every failure
+      # mode fire — the only way to exercise this check without publishing for real.
+      - name: Assert the tag matches package.json version
+        env:
+          REF: ${{ github.ref }}
+        run: node scripts/assert-tag-version.mjs "$REF"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile --trust-lockfile
+
+      # The same single gate CI runs on every PR. A tag does not earn an exemption:
+      # never publish an artifact that has not passed its own check. This is also
+      # what produces the dist/ handed to the publish job.
+      - name: Check (lint + typecheck + test:coverage + build + no-leaks)
+        run: pnpm check
+
+      # Hand the EXACT bytes that passed the no-leaks scan over dist/ to
+      # the publish job, rather than rebuilding there. Rebuilding would publish an
+      # artifact one step removed from the one the gate actually cleared.
+      - name: Upload the verified dist
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dist-${{ github.ref_name }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload test + coverage reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: publish-test-coverage-reports
+          path: |
+            coverage/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # ── 2. The irreversible step ────────────────────────────────────────────────────
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # `environment: publish` is where release controls (required reviewers,
+    # deployment branch policy, etc.) attach — an Environment with no protection
+    # rule configured is a silent no-op, so `environment: publish` alone is not
+    # proof this job is gated. Check the repo's Settings → Environments for the
+    # controls actually in force before trusting this line; do not assume from its
+    # presence here.
+    environment: publish
+    permissions:
+      contents: read
+      # OIDC trusted publishing: npm exchanges this job's GitHub-issued OIDC token
+      # for a short-lived publish credential, scoped to the Trusted Publisher
+      # configured on the package (repo + this workflow file + this Environment).
+      # No npm token is generated, stored, or handled anywhere in this job.
+      id-token: write
+      # NOTE: no `actions: read`. This block REPLACES the default token scopes, so
+      # it was worth confirming rather than assuming: actions/download-artifact
+      # requires an explicit token only when fetching from a DIFFERENT repository or
+      # a DIFFERENT workflow run (its `repository` / `run-id` inputs). The download
+      # below passes neither — it is a same-run, same-repo fetch — so it resolves
+      # from the run context and needs no extra scope. Keep it that way.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version-file: .nvmrc
+          # No `cache:` here: this job holds the OIDC publish token and must not restore a
+          # cache written by any other run.
+
+      # No build here by design — dist/ arrives as the verified artifact from job 1.
+      - name: Download the verified dist
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6.0.0
+        with:
+          name: dist-${{ github.ref_name }}
+          path: dist/
+
+      # The upload side guards itself with `if-no-files-found: error`; this is the
+      # matching assertion on the receiving side, and it closes the ONE path where a
+      # green `verify` still ships a broken package. `files` is ["dist", "src"], so a
+      # dist/ that arrived empty or partial would still produce a perfectly valid
+      # tarball — one whose `exports` resolve to nothing, failing in the consumer's
+      # bundler rather than here. Both subpath entrypoints declared in package.json
+      # are checked, types included, because those are exactly what a consumer
+      # resolves through.
+      - name: Assert the verified dist actually arrived
+        run: |
+          set -euo pipefail
+          for f in dist/index.js dist/index.d.ts \
+                   dist/testing/index.js dist/testing/index.d.ts; do
+            if [ ! -s "$f" ]; then
+              echo "::error::$f is missing or empty — the verified dist did not"\
+                   "arrive intact. Refusing to publish: package.json#exports would"\
+                   "resolve to nothing and the break would surface in a consumer's"\
+                   "bundler instead of here."
+              exit 1
+            fi
+          done
+          echo "verified dist intact — $(find dist -type f | wc -l) file(s)"
+
+      # Re-asserted after checkout in this job too. Cheap, and it closes the window
+      # where the two jobs could disagree about what is being shipped.
+      - name: Re-assert the tag matches package.json version
+        env:
+          REF: ${{ github.ref }}
+        run: node scripts/assert-tag-version.mjs "$REF"
+
+      # `--no-git-checks`: a tag build is a detached HEAD, which pnpm otherwise
+      # refuses to publish from. `--access public` is also in package.json#publishConfig
+      # (required for a scoped package to install without restriction); it is repeated
+      # here so the flag survives a config edit. `--provenance` asks for a signed build
+      # attestation tying the tarball to this workflow run. No token: the
+      # `id-token: write` permission above plus the npm Trusted Publisher configured
+      # on the package are what authorize this publish (pnpm >=11.1.3, required for
+      # OIDC trusted publishing to work at all — pinned well above that in
+      # package.json#packageManager).
+      - name: Publish to npm
+        run: pnpm publish --no-git-checks --provenance --access public

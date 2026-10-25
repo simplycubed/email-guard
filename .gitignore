@@ -1,0 +1,21 @@
+# build output
+dist/
+
+# test + coverage output
+coverage/
+test-results/
+
+# dependencies
+node_modules/
+.pnpm-store/
+
+# env & secrets
+.env
+.env.*
+!.env.example
+
+# os / editor
+.DS_Store
+*.log
+.vscode/
+.idea/
