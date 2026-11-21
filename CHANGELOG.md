@@ -9,6 +9,17 @@ config change.
 
 ## [Unreleased]
 
+### Security
+
+- Dev-dependency updates closing three moderate advisories, none of which reach a consumer: the
+  package has no runtime dependencies and ships only `dist/` and `src/`.
+  - `vitest` and `@vitest/coverage-v8` to 4.1.12, which brings `@vitest/mocker` to 4.1.12 —
+    GHSA-qxg6-89mg-rqv8 (code injection via unauthenticated manual mock registration) and
+    GHSA-xp26-3454-mjgp (Windows backslash traversal bypassing the mocker redirect allowlist).
+  - `typescript-eslint` floor raised to ^8.73.0, whose `@typescript-eslint/typescript-estree`
+    depends on `minimatch` ^11.0.1 rather than ^10.2.2 — GHSA-g3hv-75wg-m249 (denial of service
+    via globparts amplification, affecting >=7.0.0 <11.0.1).
+
 ## [0.1.1] - 2026-11-21
 
 No library changes. `src/` is byte-identical to 0.1.0 — verified by unpacking the published
