@@ -9,6 +9,15 @@ config change.
 
 ## [Unreleased]
 
+### Changed
+
+- Dev-only: the build compiler is now TypeScript 7.0.2, installed side by side with the TypeScript
+  6 API that typescript-eslint needs. `tsc` is TS 7, the `typescript` module resolves to TS 6, and
+  `tsc6` is available for comparison. No runtime dependency, no public API change, and the emitted
+  declarations are byte-identical to those TypeScript 5.9.3 produced, verified by diffing against
+  the published 0.1.1 tarball. A consumer typechecks cleanly on TypeScript 5.9.3, 6.0.3 and 7.0.2
+  with `skipLibCheck` off, so no consumer needs to pin anything.
+
 ## [0.1.1] - 2026-11-21
 
 One library fix, below, with no API or behaviour change: `normalizeAddress` returns exactly what it
