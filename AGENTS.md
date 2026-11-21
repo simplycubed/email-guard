@@ -77,6 +77,16 @@ Everything that looks like restraint follows from this:
 then build the feature against it. A gate nobody has watched fire is a false clear, so every new
 check lands with a negative control.
 
+**Extend the gate by adding steps to `pnpm check`, not by adding workflows.** One documented
+exception: `.github/workflows/codeql.yml`. CodeQL cannot run as a local command — it needs the
+`github/codeql-action` runner and `security-events: write` to upload SARIF to the code-scanning
+API — so it is a separate workflow by necessity. It is scoped to stay out of the gate's way: it
+does not touch the `check` job or its check-run context string, and it is **not** a required
+status check, because a required check on a workflow that has never produced a result deadlocks
+every PR. Findings land in Security → Code scanning, not in a red PR. Anything that _can_ run as
+a local command still belongs in `pnpm check`; do not read this exception as permission to add
+workflows generally.
+
 ### The leak scan
 
 `scripts/no-leaks.mjs` runs over `src/`, `dist/`, `README.md`, `package.json`, `AGENTS.md`,
