@@ -38,21 +38,28 @@ updates:
       default-days: 7
       semver-major-days: 14
     ignore:
-      # TypeScript 7 is held back, not skipped. typescript-eslint 8.73.0 — the
-      # latest release — declares `typescript: ">=4.8.4 <6.1.0"`, and the version
-      # check is a hard `Error: typescript-eslint does not support TS 7.0.`, not a
-      # warning, so `pnpm lint` (and therefore the `check` gate) cannot pass with
-      # TS 7 installed. Remove this entry as soon as typescript-eslint ships a
-      # release whose `typescript` peer range admits 7.x.
+      # The `typescript` entry in package.json is an ALIAS to
+      # @typescript/typescript6, not the typescript package, because
+      # typescript-eslint hard-throws at module load on TS >= 7 and needs the TS 6
+      # API. The build compiler is TS 7, installed as `@typescript/native`. See
+      # AGENTS.md for why, and issue #7 for the condition that collapses this back
+      # to a single compiler.
+      #
+      # Majors on both are held because each one has to move with the other and
+      # with typescript-eslint, so an isolated bump cannot be correct: TS 8 would
+      # need a @typescript/typescript7 bridge to exist first, and dropping the
+      # bridge needs a typescript-eslint release that accepts 7.x.
+      #
       # Accepted tradeoff: unlike `cooldown`, which applies to version updates
-      # only, `ignore` DOES suppress security updates — so a TypeScript 7.x
-      # advisory would not open a PR while this entry stands. Acceptable here
-      # because typescript is devDependency-only and `files: ["dist", "src"]`
-      # never ships a compiler, so a TS advisory is a CI/workstation risk, not a
-      # consumer supply-chain one. Revisit if typescript ever becomes a runtime
-      # dependency.
+      # only, `ignore` DOES suppress security updates, so a TypeScript advisory in
+      # a held major line would not open a PR. Acceptable because these are
+      # devDependency-only and `files: ["dist", "src"]` never ships a compiler, so
+      # a TS advisory is a CI/workstation risk rather than a consumer
+      # supply-chain one. Revisit if typescript becomes a runtime dependency.
       # Tracked by: https://github.com/simplycubed/email-guard/issues/7
       - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@typescript/native"
         update-types: ["version-update:semver-major"]
     # Order matters: Dependabot assigns each dependency to the FIRST group it
     # matches, so the version-locked families have to come before the catch-all.

@@ -87,6 +87,44 @@ every PR. Findings land in Security → Code scanning, not in a red PR. Anything
 a local command still belongs in `pnpm check`; do not read this exception as permission to add
 workflows generally.
 
+### Two TypeScript compilers, on purpose
+
+`pnpm check` builds and typechecks with **TypeScript 7**, and lints with the **TypeScript 6 API**.
+Both are installed, and the aliasing in `package.json` is deliberate:
+
+```json
+"@typescript/native": "npm:typescript@^7.0.2",
+"typescript": "npm:@typescript/typescript6@^6.0.2"
+```
+
+`tsc` comes from `@typescript/native` (the real `typescript` package, 7.x) and is what `typecheck`
+and `build` run. `require("typescript")` resolves to `@typescript/typescript6`, which is what
+eslint loads. `tsc6` is also on PATH for comparing compilers.
+
+The reason is a single hard guard. `typescript-eslint/dist/index.js` reads `ts.versionMajor` at
+module load and throws `typescript-eslint does not support TS 7.0.` when it is 7 or higher. No
+option disables it: `onUnsupportedTypeScriptVersion: 'ignore'` only governs the softer range
+warning inside typescript-estree, not this guard. So the compiler eslint sees has to be 6.x, and
+this layout is the arrangement Microsoft documents for running the two lines side by side.
+
+Two things to know before changing it:
+
+- **Do not "simplify" this to one `typescript` entry.** Pointing `typescript` at 7.x puts `pnpm
+lint` back to a hard crash, and pointing it at 6.x silently downgrades the build compiler.
+- **Typed linting would run on TS 6, not TS 7.** Irrelevant today because `eslint.config.js` uses
+  `tseslint.configs.recommended`, the syntactic rule set, which never builds a program. It becomes
+  relevant the moment anything type-aware is adopted.
+
+Package version is not compiler version here: `@typescript/typescript6@6.0.2` ships TypeScript
+6.0.3, so `tsc6 --version` and the package range disagree. That is expected, not a mismatch.
+
+Consumers are unaffected by any of this. A library's compatibility surface is its emitted `.d.ts`,
+not its devDependency: the declarations TS 7 emits are byte-identical to those TS 5.9.3 emitted,
+and a consumer typechecks cleanly on 5.9.3, 6.0.3 and 7.0.2 with `skipLibCheck` off. Nothing
+downstream needs to pin a TypeScript version. This collapses back to one compiler when
+typescript-eslint ships a release accepting 7.x (issue #7, upstream
+typescript-eslint/typescript-eslint#10940).
+
 ### The leak scan
 
 `scripts/no-leaks.mjs` runs over `src/`, `dist/`, `README.md`, `package.json`, `AGENTS.md`,
