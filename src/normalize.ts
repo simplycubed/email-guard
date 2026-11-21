@@ -20,7 +20,19 @@ export function normalizeAddress(email: string): string {
   const lowered = email.trim().toLowerCase();
   const at = lowered.indexOf("@");
   if (at < 0) return lowered;
-  return lowered.slice(0, at + 1) + lowered.slice(at + 1).replace(/\.+$/, "");
+  // Scan back over the trailing dot run instead of matching /\.+$/ on the domain.
+  // That regex is polynomial: on a domain of n dots followed by any non-dot, `\.+`
+  // matches greedily from every start offset, fails `$`, and backtracks the whole
+  // run, so the work is O(n^2). Measured on the old code, `a@` + `.`*n + `x` took
+  // 28ms at n=8000 and 1.8s at n=64000. normalizeAddress is exported, takes
+  // consumer input, and caps nothing (the 254 limit in isMailboxShaped applies to
+  // its OUTPUT), so a caller passing an untrusted string could burn a Workers CPU
+  // budget on a few kilobytes. This loop is a single backward pass, and the 46 is
+  // ".". Behaviour is unchanged: a domain that is all dots still collapses to
+  // everything up to and including the "@".
+  let end = lowered.length;
+  while (end > at + 1 && lowered.charCodeAt(end - 1) === 46) end--;
+  return lowered.slice(0, end);
 }
 
 /** The two halves of a normalized address, or null when it has no single `@` to split on. */

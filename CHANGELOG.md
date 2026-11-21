@@ -11,17 +11,25 @@ config change.
 
 ## [0.1.1] - 2026-11-21
 
-No library changes. `src/` is byte-identical to 0.1.0 — verified by unpacking the published
-tarball — so every consumer-visible behaviour is unchanged and no migration applies.
+One library fix, below, with no API or behaviour change: `normalizeAddress` returns exactly what it
+returned in 0.1.0 for every input, so there is no migration.
 
-This release exists to exercise the release path itself. 0.0.0-stage and 0.1.0 were both published
-by hand, so `.github/workflows/publish.yml` has never executed, and neither published version
-carries a provenance attestation. 0.1.1 is the first version published by the tag-triggered,
-Environment-gated workflow, and therefore the first with a signed build attestation tying the
-tarball to the run that produced it. A release path nobody has watched run is a false clear.
+This is also the first version published by the tag-triggered, Environment-gated workflow, and so
+the first carrying a signed build attestation tying the tarball to the run that produced it.
+0.0.0-stage and 0.1.0 were both published by hand and have no provenance.
 
 ### Security
 
+- `normalizeAddress` no longer uses a polynomial-time regular expression to strip trailing dots
+  from the domain, closing a denial-of-service path (CodeQL `js/polynomial-redos`). The old
+  `/\.+$/` matched the dot run from every start offset, failed its end anchor, and backtracked
+  the whole run, so the cost was quadratic in input length: `a@` + `.`*n + `x` measured 28ms at
+  n=8000 and 1.8s at n=64000. `normalizeAddress` is exported, takes whatever the consumer passes,
+  and imposes no length cap of its own (the 254-character limit in the internal mailbox guard
+  applies to its output), so a few kilobytes of untrusted input could exhaust a Cloudflare
+  Workers CPU budget. It is now a single backward scan. Behaviour is unchanged, confirmed by
+  differential testing the old and new implementations over 200,000 generated inputs, and the
+  regression test fails at 1784ms against the old code.
 - Dev-dependency updates closing three moderate advisories, none of which reach a consumer: the
   package has no runtime dependencies and ships only `dist/` and `src/`.
   - `vitest` and `@vitest/coverage-v8` to 4.1.12, which brings `@vitest/mocker` to 4.1.12 —
