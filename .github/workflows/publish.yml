@@ -76,7 +76,14 @@ jobs:
         uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: .nvmrc
-          cache: pnpm
+          # No `cache:` here, for the same reason the publish job below omits it, and
+          # with more force: this is the job that runs the gate and produces the
+          # dist/ that gets published. A tag run's cache scope falls back to the
+          # DEFAULT BRANCH, so a pnpm store written by any main-branch ci.yml run
+          # would be an input to the released bytes — and the human approving the
+          # release would be approving bytes they believe came from the lockfile.
+          # The release path runs a few times a year; the cache buys seconds and
+          # costs the provenance of the artifact. Install cold.
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --trust-lockfile
