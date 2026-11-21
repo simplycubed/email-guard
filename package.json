@@ -1,6 +1,6 @@
 {
   "name": "@simplycubed/email-guard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Never email someone who did not ask for it. Address checks, double opt-in tokens, throttling and suppression for Workers-style runtimes, with storage and mail sending left to the consumer.",
   "type": "module",
   "sideEffects": false,
