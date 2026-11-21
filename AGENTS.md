@@ -125,9 +125,20 @@ tags, never create the `publish` environment and never publish.**
    Authorization is npm trusted publishing over OIDC: no npm token is stored anywhere. `verify`
    also requires the tagged commit to be reachable from `main`. Actions are pinned by commit SHA.
 
-The human approval attaches to the `publish` environment (required reviewer), so it comes last,
-on the irreversible step only, after the evidence from `verify` exists. An environment with no
-protection rule is a silent no-op, so confirm the reviewer is set before trusting the gate.
+**There is no human approval on publish.** The `publish` environment held a required reviewer
+until 2026-11-21, when it was removed by owner decision; it now carries no protection rules, so a
+`v*` tag publishes to npm unattended. The `environment: publish` line in the workflow stays
+regardless, because the npm Trusted Publisher is scoped to that environment name and a job running
+outside it fails the OIDC exchange.
+
+What this makes load-bearing: nothing stops an unintended publish except the tag itself. `verify`
+still runs the full gate and still refuses a tag that is off `main` or disagrees with
+`package.json`, so a tag cannot publish arbitrary code. But a tag pushed by accident, or at the
+wrong commit, publishes immediately and immutably. Treat creating a `v*` tag as the irreversible
+act it now is: there is no longer a second chance between the push and the registry. An
+environment with no protection rule is a silent no-op, so read
+`gh api repos/simplycubed/email-guard/environments/publish` rather than inferring the gate from
+the workflow.
 
 The package is public (`publishConfig.access: "public"`). npm trusted publishing needs the package
 to exist already: publish `0.1.0` once by hand with two-factor authentication, then configure the

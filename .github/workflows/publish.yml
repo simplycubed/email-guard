@@ -121,12 +121,24 @@ jobs:
     needs: verify
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # `environment: publish` is where release controls (required reviewers,
-    # deployment branch policy, etc.) attach — an Environment with no protection
-    # rule configured is a silent no-op, so `environment: publish` alone is not
-    # proof this job is gated. Check the repo's Settings → Environments for the
-    # controls actually in force before trusting this line; do not assume from its
-    # presence here.
+    # THIS JOB IS UNATTENDED. The `publish` environment carries NO protection rules
+    # as of 2026-11-21 (owner decision): `protection_rules: []`, so a `v*` tag runs
+    # straight through to `pnpm publish` with no human in the loop. An Environment
+    # with no rule configured is a silent no-op, so do not read the line below as a
+    # gate. `gh api repos/simplycubed/email-guard/environments/publish` is the only
+    # source of truth for what is actually in force.
+    #
+    # DO NOT DELETE the `environment: publish` line to "clean up" the now-ungated
+    # environment. It is load-bearing for authorization, not for approval: the npm
+    # Trusted Publisher is scoped to (repository + this workflow file + this
+    # environment name), so a job running outside it presents an OIDC token npm
+    # will refuse, and the publish fails closed.
+    #
+    # To restore the human gate, add a required reviewer back:
+    #   gh api -X PUT repos/simplycubed/email-guard/environments/publish \
+    #     --input - <<'JSON'
+    #   { "reviewers": [{ "type": "User", "id": 1191302 }] }
+    #   JSON
     environment: publish
     permissions:
       contents: read
