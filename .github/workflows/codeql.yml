@@ -1,0 +1,90 @@
+name: CodeQL
+
+# Static analysis, deliberately SEPARATE from the `check` gate in ci.yml.
+#
+# ci.yml says later work extends the gate by adding steps to `pnpm check`, not by
+# adding workflows — and that still holds for anything that can run as a local
+# command. CodeQL cannot: it needs the `github/codeql-action` runner and
+# `security-events: write` to upload a SARIF result to the repo's code-scanning
+# API, neither of which exists inside `pnpm check`. So this is a separate
+# workflow by necessity, and it is scoped to stay out of the gate's way:
+#
+#   - it does NOT touch the `check` job or its check-run context string, and
+#   - it is NOT a required branch-protection check. Making a brand-new workflow
+#     required before it has ever produced a result deadlocks every PR against a
+#     check with no producer. Promote it only after watching it run green on main
+#     and on a PR, and only as a deliberate branch-protection change.
+#
+# Findings land in the repo's Security -> Code scanning tab, not in a red PR.
+#
+# Advanced setup (this file) and CodeQL default setup are mutually exclusive.
+# Default setup is `not-configured` for this repo, so this file owns the
+# configuration; do not enable default setup in Settings alongside it.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly re-scan so a newly published CodeQL query finds existing code even
+    # when nothing has been pushed. Off-peak, off the hour.
+    - cron: "27 5 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      # The only elevated grant here, and the reason this cannot be a `pnpm check`
+      # step: SARIF upload to the code-scanning API.
+      security-events: write
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # The library itself. `build-mode: none` is correct for TypeScript —
+          # CodeQL extracts from source and needs no compile, so this job installs
+          # nothing and executes no package code. That is also the supply-chain
+          # win: a malicious postinstall in a dependency has nothing to run in.
+          - language: javascript-typescript
+            build-mode: none
+          # The workflows in this directory are themselves attack surface — script
+          # injection via `${{ github.event.* }}`, overbroad `permissions:`,
+          # unpinned or mutable action refs. The `actions` language analyzes them.
+          - language: actions
+            build-mode: none
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          # `security-extended` over the default suite: this package is published
+          # to npm and runs inside consumers' Workers, so the extra precision-
+          # tradeoff queries are worth the small false-positive cost on a
+          # codebase this size. `security-and-quality` is NOT used — its
+          # maintainability queries duplicate what eslint already gates.
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@1bd86f2fdb4b86187fa4059f16f31a3202acc9ea # v4.39.4
+        with:
+          category: "/language:${{ matrix.language }}"

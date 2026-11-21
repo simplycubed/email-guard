@@ -1,17 +1,53 @@
 version: 2
+
+# Dependency intake policy. Two rules shape every PR Dependabot opens here:
+#
+# 1. MAJORS ARRIVE ALONE. Each group is scoped to `update-types: [minor, patch]`,
+#    so a major lands as its own individually-reviewable PR instead of riding
+#    inside a 10-package group. This is not cosmetic — a grouped major poisons the
+#    whole batch: three consecutive weekly dev-dependency PRs (2026-11-01, -11-08,
+#    -11-15) all failed `check` on a single incompatible major while nine healthy
+#    bumps sat blocked behind it. Ungrouped updates get individual PRs by default,
+#    so no extra group entry is needed to express this.
+# 2. NEW RELEASES AGE BEFORE WE TAKE THEM. `cooldown` holds a published version
+#    for a few days so a compromised or yanked release has time to be caught
+#    upstream before it reaches a PR branch here. Majors wait longest.
 updates:
-  # Actions are pinned by commit SHA; Dependabot keeps the SHAs (and the version comments) current.
+  # Actions are pinned by commit SHA; Dependabot keeps the SHAs (and the version
+  # comments) current. `directory: /` covers every file in .github/workflows,
+  # so a newly added workflow is picked up with no change here.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
     groups:
       actions:
         patterns: ["*"]
+        update-types: ["minor", "patch"]
+
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 5
+    cooldown:
+      default-days: 7
+      semver-major-days: 14
+    ignore:
+      # TypeScript 7 is held back, not skipped. typescript-eslint 8.73.0 — the
+      # latest release — declares `typescript: ">=4.8.4 <6.1.0"`, and the version
+      # check is a hard `Error: typescript-eslint does not support TS 7.0.`, not a
+      # warning, so `pnpm lint` (and therefore the `check` gate) cannot pass with
+      # TS 7 installed. Remove this entry as soon as typescript-eslint ships a
+      # release whose `typescript` peer range admits 7.x.
+      # Tracked by: https://github.com/simplycubed/email-guard/issues/7
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     groups:
       dev-dependencies:
         dependency-type: development
+        update-types: ["minor", "patch"]
